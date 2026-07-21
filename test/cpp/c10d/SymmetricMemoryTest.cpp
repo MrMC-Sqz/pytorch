@@ -2,11 +2,17 @@
 
 #include <torch/csrc/distributed/c10d/symm_mem/SymmetricMemory.hpp>
 
+#include <atomic>
 #include <cstdint>
 #include <utility>
 
 namespace c10d::symmetric_memory {
 namespace {
+
+uint64_t get_unique_test_alloc_id() {
+  static std::atomic<uint64_t> next_alloc_id{1};
+  return next_alloc_id.fetch_add(1, std::memory_order_relaxed);
+}
 
 class TestSymmetricMemoryAllocator final : public SymmetricMemoryAllocator {
  public:
@@ -148,7 +154,7 @@ TEST(SymmetricMemoryAllocatorTest, PersistentEmptyUsesBackendTensorWrapper) {
   register_allocator(c10::DeviceType::CPU, allocator);
   const std::optional<std::string> group_name = "persistent_group";
 
-  constexpr uint64_t alloc_id = 0x53594d4d;
+  const uint64_t alloc_id = get_unique_test_alloc_id();
   auto tensor = empty_strided_p2p(
       {2, 3},
       {3, 1},
@@ -183,7 +189,7 @@ TEST(SymmetricMemoryAllocatorTest, RejectsChangedStoragePointer) {
   allocator->offset_storage_ptr_ = true;
   register_allocator(c10::DeviceType::CPU, allocator);
 
-  constexpr uint64_t alloc_id = 0x53594d4e;
+  const uint64_t alloc_id = get_unique_test_alloc_id();
   EXPECT_THROW(
       empty_strided_p2p(
           {2, 3},
