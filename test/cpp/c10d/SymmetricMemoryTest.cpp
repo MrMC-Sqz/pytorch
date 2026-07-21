@@ -20,12 +20,14 @@ class TestSymmetricMemoryAllocator final : public SymmetricMemoryAllocator {
       c10::IntArrayRef strides,
       c10::ScalarType dtype,
       c10::Device device,
+      const std::optional<std::string>& group_name,
       std::function<void(void*)> deleter) override {
     ++make_tensor_calls_;
     sizes_ = sizes.vec();
     strides_ = strides.vec();
     dtype_ = dtype;
     device_ = device;
+    make_tensor_group_name_ = group_name;
     saw_deleter_ = static_cast<bool>(deleter);
     if (offset_storage_ptr_) {
       EXPECT_FALSE(deleter);
@@ -37,6 +39,7 @@ class TestSymmetricMemoryAllocator final : public SymmetricMemoryAllocator {
         strides,
         dtype,
         device,
+        group_name,
         std::move(deleter));
   }
 
@@ -97,6 +100,7 @@ class TestSymmetricMemoryAllocator final : public SymmetricMemoryAllocator {
   void* rendezvous_ptr_ = nullptr;
   void* has_allocation_ptr_ = nullptr;
   size_t allocation_size_ = 0;
+  std::optional<std::string> make_tensor_group_name_;
   std::vector<int64_t> sizes_;
   std::vector<int64_t> strides_;
   c10::ScalarType dtype_ = c10::ScalarType::Undefined;
@@ -106,13 +110,14 @@ class TestSymmetricMemoryAllocator final : public SymmetricMemoryAllocator {
 TEST(SymmetricMemoryAllocatorTest, EmptyUsesBackendTensorWrapper) {
   auto allocator = c10::make_intrusive<TestSymmetricMemoryAllocator>();
   register_allocator(c10::DeviceType::CPU, allocator);
+  const std::optional<std::string> group_name = "test_group";
 
   auto tensor = empty_strided_p2p(
       {2, 3},
       {3, 1},
       c10::ScalarType::Float,
       c10::Device(c10::DeviceType::CPU),
-      std::nullopt,
+      group_name,
       std::nullopt);
 
   EXPECT_EQ(allocator->make_tensor_calls_, 1);
@@ -121,11 +126,12 @@ TEST(SymmetricMemoryAllocatorTest, EmptyUsesBackendTensorWrapper) {
   EXPECT_EQ(allocator->strides_, (std::vector<int64_t>{3, 1}));
   EXPECT_EQ(allocator->dtype_, c10::ScalarType::Float);
   EXPECT_EQ(allocator->device_, c10::Device(c10::DeviceType::CPU));
+  EXPECT_EQ(allocator->make_tensor_group_name_, group_name);
   EXPECT_EQ(tensor.sizes(), (c10::IntArrayRef{2, 3}));
   EXPECT_EQ(tensor.strides(), (c10::IntArrayRef{3, 1}));
   EXPECT_EQ(tensor.storage().data_ptr().get(), allocator->allocation_);
 
-  EXPECT_EQ(rendezvous(tensor, std::nullopt), nullptr);
+  EXPECT_EQ(rendezvous(tensor, group_name), nullptr);
   EXPECT_EQ(allocator->rendezvous_calls_, 1);
   EXPECT_EQ(allocator->rendezvous_ptr_, allocator->allocation_);
 
@@ -140,6 +146,7 @@ TEST(SymmetricMemoryAllocatorTest, EmptyUsesBackendTensorWrapper) {
 TEST(SymmetricMemoryAllocatorTest, PersistentEmptyUsesBackendTensorWrapper) {
   auto allocator = c10::make_intrusive<TestSymmetricMemoryAllocator>();
   register_allocator(c10::DeviceType::CPU, allocator);
+  const std::optional<std::string> group_name = "persistent_group";
 
   constexpr uint64_t alloc_id = 0x53594d4d;
   auto tensor = empty_strided_p2p(
@@ -147,23 +154,26 @@ TEST(SymmetricMemoryAllocatorTest, PersistentEmptyUsesBackendTensorWrapper) {
       {3, 1},
       c10::ScalarType::Float,
       c10::Device(c10::DeviceType::CPU),
-      std::nullopt,
+      group_name,
       alloc_id);
   auto* data_ptr = tensor.data_ptr();
 
   EXPECT_EQ(allocator->make_tensor_calls_, 1);
   EXPECT_FALSE(allocator->saw_deleter_);
+  EXPECT_EQ(allocator->make_tensor_group_name_, group_name);
 
   tensor.reset();
+  allocator->make_tensor_group_name_.reset();
   tensor = empty_strided_p2p(
       {2, 3},
       {3, 1},
       c10::ScalarType::Float,
       c10::Device(c10::DeviceType::CPU),
-      std::nullopt,
+      group_name,
       alloc_id);
 
   EXPECT_EQ(allocator->make_tensor_calls_, 2);
+  EXPECT_EQ(allocator->make_tensor_group_name_, group_name);
   EXPECT_EQ(tensor.data_ptr(), data_ptr);
   EXPECT_EQ(allocator->free_calls_, 0);
 }

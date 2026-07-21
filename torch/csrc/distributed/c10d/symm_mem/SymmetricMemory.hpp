@@ -121,8 +121,10 @@ class SymmetricMemoryAllocator : public c10::intrusive_ptr_target {
 
   // Wraps a pointer returned by alloc() in a tensor. Backends that require
   // custom TensorImpl, StorageImpl, or storage metadata for externally
-  // allocated memory can override this method. The returned tensor must use
-  // ptr as its exact storage data pointer:
+  // allocated memory can override this method. group_name is the logical
+  // group supplied to empty_strided_p2p() and may be ignored by backends whose
+  // tensor wrapping is group-independent. The returned tensor must use ptr as
+  // its exact storage data pointer:
   //
   //   tensor.storage().data_ptr().get() == ptr
   //
@@ -135,6 +137,7 @@ class SymmetricMemoryAllocator : public c10::intrusive_ptr_target {
       c10::IntArrayRef strides,
       c10::ScalarType dtype,
       c10::Device device,
+      const std::optional<std::string>& group_name,
       std::function<void(void*)> deleter = {});
 };
 

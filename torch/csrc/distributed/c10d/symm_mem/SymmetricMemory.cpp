@@ -187,7 +187,7 @@ static at::Tensor empty_strided_p2p_persistent(
   }
 
   auto allocated =
-      allocator->make_tensor(dev_ptr, size, stride, dtype, device);
+      allocator->make_tensor(dev_ptr, size, stride, dtype, device, group_name);
   check_tensor_storage_ptr(allocated, dev_ptr);
 
   // Track the allocation's activeness
@@ -210,6 +210,7 @@ at::Tensor SymmetricMemoryAllocator::make_tensor(
     c10::IntArrayRef strides,
     c10::ScalarType dtype,
     c10::Device device,
+    const std::optional<std::string>& /*group_name*/,
     std::function<void(void*)> deleter) {
   auto options = at::TensorOptions().dtype(dtype).device(device);
   if (deleter) {
@@ -310,6 +311,7 @@ at::Tensor empty_strided_p2p(
       stride,
       dtype,
       device,
+      group_name,
       std::move(deleter));
   check_tensor_storage_ptr(allocated, dev_ptr);
   return allocated;
