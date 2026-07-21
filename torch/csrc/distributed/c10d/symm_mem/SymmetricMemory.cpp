@@ -177,8 +177,8 @@ static at::Tensor empty_strided_p2p_persistent(
     alloc_id_to_dev_ptr[alloc_id] = dev_ptr;
   }
 
-  auto options = at::TensorOptions().dtype(dtype).device(device);
-  auto allocated = at::from_blob(dev_ptr, size, stride, options);
+  auto allocated =
+      allocator->make_tensor(dev_ptr, size, stride, dtype, device);
 
   // Track the allocation's activeness
   alloc_id_to_storage.insert_or_assign(
@@ -192,6 +192,20 @@ namespace c10d::symmetric_memory {
 
 bool is_finalizing() {
   return is_finalizing_;
+}
+
+at::Tensor SymmetricMemoryAllocator::make_tensor(
+    void* ptr,
+    c10::IntArrayRef sizes,
+    c10::IntArrayRef strides,
+    c10::ScalarType dtype,
+    c10::Device device,
+    std::function<void(void*)> deleter) {
+  auto options = at::TensorOptions().dtype(dtype).device(device);
+  if (deleter) {
+    return at::from_blob(ptr, sizes, strides, std::move(deleter), options);
+  }
+  return at::from_blob(ptr, sizes, strides, options);
 }
 
 void register_allocator(
@@ -279,13 +293,14 @@ at::Tensor empty_strided_p2p(
   auto allocator = get_allocator(device.type());
   void* dev_ptr = allocator->alloc(alloc_size, device.index(), group_name);
 
-  auto options = at::TensorOptions().dtype(dtype).device(device);
-  return at::from_blob(
+  auto deleter = [allocator](void* ptr) { allocator->free(ptr); };
+  return allocator->make_tensor(
       dev_ptr,
       size,
       stride,
-      [allocator = std::move(allocator)](void* ptr) { allocator->free(ptr); },
-      options);
+      dtype,
+      device,
+      std::move(deleter));
 }
 
 TORCH_API c10::intrusive_ptr<SymmetricMemory> rendezvous(

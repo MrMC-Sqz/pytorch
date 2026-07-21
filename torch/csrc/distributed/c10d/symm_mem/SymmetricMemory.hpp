@@ -4,6 +4,8 @@
 #include <ATen/core/ivalue.h>
 #include <torch/csrc/distributed/c10d/Store.hpp>
 
+#include <functional>
+
 namespace c10d::symmetric_memory {
 
 // SymmetricMemory represents symmetric allocations across a group of devices.
@@ -116,6 +118,18 @@ class SymmetricMemoryAllocator : public c10::intrusive_ptr_target {
   virtual bool has_allocation(void* ptr) {
     return false;
   }
+
+  // Wraps a pointer returned by alloc() in a tensor. Backends that require
+  // custom TensorImpl, StorageImpl, or storage metadata for externally
+  // allocated memory can override this method. The default implementation
+  // preserves the existing at::from_blob() behavior.
+  virtual at::Tensor make_tensor(
+      void* ptr,
+      c10::IntArrayRef sizes,
+      c10::IntArrayRef strides,
+      c10::ScalarType dtype,
+      c10::Device device,
+      std::function<void(void*)> deleter = {});
 };
 
 C10_EXPORT bool is_finalizing();
