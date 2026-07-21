@@ -121,8 +121,14 @@ class SymmetricMemoryAllocator : public c10::intrusive_ptr_target {
 
   // Wraps a pointer returned by alloc() in a tensor. Backends that require
   // custom TensorImpl, StorageImpl, or storage metadata for externally
-  // allocated memory can override this method. The default implementation
-  // preserves the existing at::from_blob() behavior.
+  // allocated memory can override this method. The returned tensor must use
+  // ptr as its exact storage data pointer:
+  //
+  //   tensor.storage().data_ptr().get() == ptr
+  //
+  // rendezvous() and has_allocation() use this pointer as the allocation
+  // identity. Implementations must not copy or rebase the allocation. The
+  // default implementation preserves the existing at::from_blob() behavior.
   virtual at::Tensor make_tensor(
       void* ptr,
       c10::IntArrayRef sizes,

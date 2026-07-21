@@ -27,6 +27,10 @@ class TestSymmetricMemoryAllocator final : public SymmetricMemoryAllocator {
     dtype_ = dtype;
     device_ = device;
     saw_deleter_ = static_cast<bool>(deleter);
+    if (offset_storage_ptr_) {
+      EXPECT_FALSE(deleter);
+      ptr = static_cast<uint8_t*>(ptr) + 1;
+    }
     return SymmetricMemoryAllocator::make_tensor(
         ptr,
         sizes,
@@ -58,8 +62,10 @@ class TestSymmetricMemoryAllocator final : public SymmetricMemoryAllocator {
   }
 
   c10::intrusive_ptr<SymmetricMemory> rendezvous(
-      void* /*ptr*/,
+      void* ptr,
       const std::optional<std::string>& /*group_name*/) override {
+    rendezvous_ptr_ = ptr;
+    ++rendezvous_calls_;
     return nullptr;
   }
 
@@ -75,10 +81,21 @@ class TestSymmetricMemoryAllocator final : public SymmetricMemoryAllocator {
     return "TEST";
   }
 
+  bool has_allocation(void* ptr) override {
+    has_allocation_ptr_ = ptr;
+    ++has_allocation_calls_;
+    return ptr == allocation_;
+  }
+
   int make_tensor_calls_ = 0;
   int free_calls_ = 0;
+  int rendezvous_calls_ = 0;
+  int has_allocation_calls_ = 0;
   bool saw_deleter_ = false;
+  bool offset_storage_ptr_ = false;
   void* allocation_ = nullptr;
+  void* rendezvous_ptr_ = nullptr;
+  void* has_allocation_ptr_ = nullptr;
   size_t allocation_size_ = 0;
   std::vector<int64_t> sizes_;
   std::vector<int64_t> strides_;
@@ -106,6 +123,15 @@ TEST(SymmetricMemoryAllocatorTest, EmptyUsesBackendTensorWrapper) {
   EXPECT_EQ(allocator->device_, c10::Device(c10::DeviceType::CPU));
   EXPECT_EQ(tensor.sizes(), (c10::IntArrayRef{2, 3}));
   EXPECT_EQ(tensor.strides(), (c10::IntArrayRef{3, 1}));
+  EXPECT_EQ(tensor.storage().data_ptr().get(), allocator->allocation_);
+
+  EXPECT_EQ(rendezvous(tensor, std::nullopt), nullptr);
+  EXPECT_EQ(allocator->rendezvous_calls_, 1);
+  EXPECT_EQ(allocator->rendezvous_ptr_, allocator->allocation_);
+
+  EXPECT_TRUE(is_symm_mem_tensor(tensor));
+  EXPECT_EQ(allocator->has_allocation_calls_, 1);
+  EXPECT_EQ(allocator->has_allocation_ptr_, allocator->allocation_);
 
   tensor.reset();
   EXPECT_EQ(allocator->free_calls_, 1);
@@ -140,6 +166,23 @@ TEST(SymmetricMemoryAllocatorTest, PersistentEmptyUsesBackendTensorWrapper) {
   EXPECT_EQ(allocator->make_tensor_calls_, 2);
   EXPECT_EQ(tensor.data_ptr(), data_ptr);
   EXPECT_EQ(allocator->free_calls_, 0);
+}
+
+TEST(SymmetricMemoryAllocatorTest, RejectsChangedStoragePointer) {
+  auto allocator = c10::make_intrusive<TestSymmetricMemoryAllocator>();
+  allocator->offset_storage_ptr_ = true;
+  register_allocator(c10::DeviceType::CPU, allocator);
+
+  constexpr uint64_t alloc_id = 0x53594d4e;
+  EXPECT_THROW(
+      empty_strided_p2p(
+          {2, 3},
+          {3, 1},
+          c10::ScalarType::Float,
+          c10::Device(c10::DeviceType::CPU),
+          std::nullopt,
+          alloc_id),
+      c10::Error);
 }
 
 } // namespace
