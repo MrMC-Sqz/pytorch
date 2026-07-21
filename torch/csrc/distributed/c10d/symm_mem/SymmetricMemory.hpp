@@ -98,7 +98,7 @@ class TORCH_API SymmetricMemory : public torch::CustomClassHolder {
   }
 };
 
-class SymmetricMemoryAllocator : public c10::intrusive_ptr_target {
+class TORCH_API SymmetricMemoryAllocator : public c10::intrusive_ptr_target {
  public:
   ~SymmetricMemoryAllocator() override = default;
 
