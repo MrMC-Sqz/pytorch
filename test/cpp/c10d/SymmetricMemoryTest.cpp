@@ -40,13 +40,7 @@ class TestSymmetricMemoryAllocator final : public SymmetricMemoryAllocator {
       ptr = static_cast<uint8_t*>(ptr) + 1;
     }
     return SymmetricMemoryAllocator::make_tensor(
-        ptr,
-        sizes,
-        strides,
-        dtype,
-        device,
-        group_name,
-        std::move(deleter));
+        ptr, sizes, strides, dtype, device, group_name, std::move(deleter));
   }
 
   void* alloc(

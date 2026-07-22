@@ -306,13 +306,7 @@ at::Tensor empty_strided_p2p(
 
   auto deleter = [allocator](void* ptr) { allocator->free(ptr); };
   auto allocated = allocator->make_tensor(
-      dev_ptr,
-      size,
-      stride,
-      dtype,
-      device,
-      group_name,
-      std::move(deleter));
+      dev_ptr, size, stride, dtype, device, group_name, std::move(deleter));
   check_tensor_storage_ptr(allocated, dev_ptr);
   return allocated;
 }
